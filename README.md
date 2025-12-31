@@ -1,3 +1,11 @@
+### Repository secrets
+
+`TSDM_COOKIE` = Cookie
+
+`GOTIFY_URL` = URL
+
+`GOTIFY_TOKEN` = TOKEN
+
 ### 一个每日自动签到和打工的工作流
 
 只需把大象关进冰箱就能用了：
