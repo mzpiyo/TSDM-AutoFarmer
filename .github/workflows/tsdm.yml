@@ -2,10 +2,8 @@ name: TSDM Auto Tasks
 
 on:
   schedule:
-  #定时运行打工
-  - cron: '0 */1 * * *'
-  #每天9点签到
-  - cron: '0 1 * * *' #东八区9点  
+    - cron: '0 */1 * * *'
+    - cron: '0 1 * * *'
   workflow_dispatch:
 
 jobs:
@@ -29,14 +27,33 @@ jobs:
         run: |
           if [[ "${{ github.event_name }}" == "schedule" ]]; then
             if [[ "${{ github.event.schedule }}" == "0 1 * * *" ]]; then
-              echo "Running daily check-in"
+              echo "TASK_NAME=每日签到" >> $GITHUB_ENV
+              echo "SHOULD_NOTIFY=true" >> $GITHUB_ENV
               python tsdm.py checkin
             elif [[ "${{ github.event.schedule }}" == "0 */1 * * *" ]]; then
-              echo "Running 6-hour work"
+              echo "TASK_NAME=自动打工" >> $GITHUB_ENV
+              echo "SHOULD_NOTIFY=false" >> $GITHUB_ENV
               python tsdm.py work
             fi
           else
-            echo "Manual trigger - running both tasks"
+            echo "TASK_NAME=手动执行" >> $GITHUB_ENV
+            echo "SHOULD_NOTIFY=true" >> $GITHUB_ENV
             python tsdm.py checkin
             python tsdm.py work
           fi
+
+      - name: Send Gotify Notification on Success
+        if: success() && env.SHOULD_NOTIFY == 'true'
+        run: |
+          curl -X POST "${{ secrets.GOTIFY_URL }}/message?token=${{ secrets.GOTIFY_TOKEN }}" \
+          -F "title=天使动漫 ${{ env.TASK_NAME }} 成功 ✅" \
+          -F "message=签到任务已完成" \
+          -F "priority=5"
+
+      - name: Send Gotify Notification on Failure
+        if: failure() && env.SHOULD_NOTIFY == 'true'
+        run: |
+          curl -X POST "${{ secrets.GOTIFY_URL }}/message?token=${{ secrets.GOTIFY_TOKEN }}" \
+          -F "title=天使动漫 ${{ env.TASK_NAME }} 失败 ❌" \
+          -F "message=脚本执行出错，请检查 GitHub Actions 日志" \
+          -F "priority=8"
