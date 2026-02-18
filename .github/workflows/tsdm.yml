@@ -42,18 +42,60 @@ jobs:
             python tsdm.py work
           fi
 
-      - name: Send Gotify Notification on Success
+      # --- ✅ 成功通知 (整合 Gotify 和 Telegram) ---
+      - name: Send Notification on Success
         if: success() && env.SHOULD_NOTIFY == 'true'
+        env:
+          GOTIFY_URL: ${{ secrets.GOTIFY_URL }}
+          GOTIFY_TOKEN: ${{ secrets.GOTIFY_TOKEN }}
+          TG_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TASK_NAME: ${{ env.TASK_NAME }}
         run: |
-          curl -X POST "${{ secrets.GOTIFY_URL }}/message?token=${{ secrets.GOTIFY_TOKEN }}" \
-          -F "title=天使动漫 ${{ env.TASK_NAME }} 成功 ✅" \
-          -F "message=签到任务已完成" \
-          -F "priority=5"
+          # 1. Gotify 通知
+          if [[ -n "$GOTIFY_URL" && -n "$GOTIFY_TOKEN" ]]; then
+            echo "Sending Gotify notification..."
+            curl -s -X POST "$GOTIFY_URL/message?token=$GOTIFY_TOKEN" \
+            -F "title=天使动漫 $TASK_NAME 成功 ✅" \
+            -F "message=任务已完成" \
+            -F "priority=5"
+          fi
 
-      - name: Send Gotify Notification on Failure
+          # 2. Telegram 通知
+          if [[ -n "$TG_BOT_TOKEN" && -n "$TG_CHAT_ID" ]]; then
+            echo "Sending Telegram notification..."
+            MSG="✅ *天使动漫 $TASK_NAME 成功*%0A任务已完成。"
+            curl -s -X POST "https://api.telegram.org/bot$TG_BOT_TOKEN/sendMessage" \
+            -d chat_id="$TG_CHAT_ID" \
+            -d text="$MSG" \
+            -d parse_mode="Markdown"
+          fi
+
+      # --- 🚨 失败通知 (整合 Gotify 和 Telegram) ---
+      - name: Send Notification on Failure
         if: failure() && env.SHOULD_NOTIFY == 'true'
+        env:
+          GOTIFY_URL: ${{ secrets.GOTIFY_URL }}
+          GOTIFY_TOKEN: ${{ secrets.GOTIFY_TOKEN }}
+          TG_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TASK_NAME: ${{ env.TASK_NAME }}
         run: |
-          curl -X POST "${{ secrets.GOTIFY_URL }}/message?token=${{ secrets.GOTIFY_TOKEN }}" \
-          -F "title=天使动漫 ${{ env.TASK_NAME }} 失败 ❌" \
-          -F "message=脚本执行出错，请检查 GitHub Actions 日志" \
-          -F "priority=8"
+          # 1. Gotify 通知
+          if [[ -n "$GOTIFY_URL" && -n "$GOTIFY_TOKEN" ]]; then
+            echo "Sending Gotify notification..."
+            curl -s -X POST "$GOTIFY_URL/message?token=$GOTIFY_TOKEN" \
+            -F "title=天使动漫 $TASK_NAME 失败 ❌" \
+            -F "message=脚本执行出错，请检查 GitHub Actions 日志" \
+            -F "priority=8"
+          fi
+
+          # 2. Telegram 通知
+          if [[ -n "$TG_BOT_TOKEN" && -n "$TG_CHAT_ID" ]]; then
+            echo "Sending Telegram notification..."
+            MSG="❌ *天使动漫 $TASK_NAME 失败*%0A脚本执行出错，请检查 GitHub Actions 日志。"
+            curl -s -X POST "https://api.telegram.org/bot$TG_BOT_TOKEN/sendMessage" \
+            -d chat_id="$TG_CHAT_ID" \
+            -d text="$MSG" \
+            -d parse_mode="Markdown"
+          fi
