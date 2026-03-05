@@ -19,7 +19,8 @@ def get_headers(is_ajax=False):
         "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
         "Connection": "keep-alive",
         "Cookie": COOKIE,
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "Referer": "https://www.tsdm39.com/plugin.php?id=np_cliworkdz:work"
     }
     if is_ajax:
         headers["X-Requested-With"] = "XMLHttpRequest"
@@ -79,13 +80,15 @@ def tsdm_work():
         else:
             for i in range(6):
                 session.post(work_url, data={"act": "clickad"}, headers=get_headers(is_ajax=True))
-                time.sleep(random.uniform(4.0, 7.0))
+                time.sleep(random.uniform(3.0, 5.0))
 
             time.sleep(random.uniform(2.0, 4.0))
             res_award = session.post(work_url, data={"act": "getcre"}, headers=get_headers(is_ajax=True))
             
             if "成功" in res_award.text or "获得" in res_award.text:
                 log = "✅ 打工完成"
+            elif "已经" in res_award.text or "冷却" in res_award.text:
+                log = "✅ 打工完成(已领过)"
             else:
                 log = "❌ 打工失败: 奖励领取未成功"
     except Exception as e:
