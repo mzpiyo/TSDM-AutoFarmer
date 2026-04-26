@@ -58,7 +58,7 @@ jobs:
             curl -s -X POST "$GOTIFY_URL/message?token=$GOTIFY_TOKEN" \
             -F "title=天使动漫 $TASK_NAME 成功 ✅" \
             -F "message=任务已完成" \
-            -F "priority=5"
+            -F "priority=2"
           fi
 
           # 2. Telegram 通知
