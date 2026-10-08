@@ -1,133 +1,132 @@
+import httpx
 import re
-import urllib.parse
 import time
 import os
 import sys
-import random
-from bs4 import BeautifulSoup
-from curl_cffi import requests
 
-COOKIE = os.environ.get('TSDM_COOKIE', '').strip()
-has_error = False
+COOKIE = os.environ.get('TSDM_COOKIE', '')
 
 def send(title, message):
     print(f"【{title}】{message}")
 
-def get_headers(is_ajax=False):
-    headers = {
+def get_common_headers(referer="https://www.tsdm39.com/forum.php"):
+    return {
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
         "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
-        "Connection": "keep-alive",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
         "Cookie": COOKIE,
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-        "Referer": "https://www.tsdm39.com/plugin.php?id=np_cliworkdz:work"
+        "Referer": referer
     }
-    if is_ajax:
-        headers["X-Requested-With"] = "XMLHttpRequest"
-        headers["Content-Type"] = "application/x-www-form-urlencoded"
-    return headers
+
+def extract_formhash(html_text):
+    pattern = r'(?:formhash=|name="formhash"\s+value="|var\s+formhash\s*=\s*[\'"])([a-zA-Z0-9]{8})'
+    match = re.search(pattern, html_text)
+    return match.group(1) if match else None
 
 def tsdm_check_in():
-    log = ""
-    try:
-        session = requests.Session(impersonate="chrome120", timeout=30.0)
-        res = session.get("https://www.tsdm39.com/forum.php", headers=get_headers())
-        
-        if "Cloudflare" in res.text or "Just a moment" in res.text:
-            return "❌ 签到异常: 被 Cloudflare 拦截"
-        if "请先登录" in res.text:
-            return "❌ 签到异常: Cookie失效"
+    headers = get_common_headers()
+    with httpx.Client(headers=headers, follow_redirects=True, timeout=15) as client:
+        try:
+            response = client.get("https://www.tsdm39.com/forum.php")
+            formhash_value = extract_formhash(response.text)
+            
+            if not formhash_value:
+                return "❌ 签到异常: 获取formhash失败 (HTML结构可能已大变或Cookie失效)"
 
-        pattern = r'formhash=([a-zA-Z0-9]{8})|name="formhash" value="([a-zA-Z0-9]{8})"'
-        match = re.search(pattern, res.text)
-        
-        if match:
-            formhash_value = match.group(1) if match.group(1) else match.group(2)
-            encoded_formhash = urllib.parse.quote(formhash_value)
-            payload = {"formhash": encoded_formhash, "qdxq": "kx", "qdmode": "3", "todaysay": "", "fastreply": "1"}
-            sign_url = "https://www.tsdm39.com/plugin.php?id=dsu_paulsign:sign&operation=qiandao&infloat=1&sign_as=1&inajax=1"
+            payload = {
+                "formhash": formhash_value, 
+                "qdxq": "kx", 
+                "qdmode": "3", 
+                "todaysay": "", 
+                "fastreply": "1"
+            }
             
-            time.sleep(random.uniform(2.0, 4.0))
-            sign_res = session.post(sign_url, data=payload, headers=get_headers())
+            url_params = {
+                "id": "dsu_paulsign:sign",
+                "operation": "qiandao",
+                "infloat": "1",
+                "sign_as": "1",
+                "inajax": "1"
+            }
             
-            if "签到成功" in sign_res.text or "已经签到" in sign_res.text:
-                log = "✅ 签到成功/今日已签到"
+            response = client.post(
+                "https://www.tsdm39.com/plugin.php",
+                params=url_params,
+                data=payload
+            )
+            
+            if "签到成功" in response.text or "恭喜你签到成功" in response.text:
+                return "✅ 签到成功"
+            elif "您今日已经签到" in response.text:
+                return "✅ 今日已签到"
             else:
-                log = "❌ 签到异常: 未找到成功标识"
-        else:
-            log = "❌ 签到异常: 获取formhash失败"
-            
-    except Exception as e:
-        log = f"❌ 签到异常: {str(e)}"
-        
-    return log
+                return f"❌ 签到异常: 未知响应 (截取: {response.text[:50]})"
+                
+        except Exception as e:
+            return f"❌ 签到异常: {str(e)}"
 
 def tsdm_work():
-    log = ""
-    try:
-        session = requests.Session(impersonate="chrome120", timeout=30.0)
-        work_url = "https://www.tsdm39.com/plugin.php?id=np_cliworkdz:work"
-        res = session.get(work_url + "&inajax=1", headers=get_headers())
-        
-        if "请先登录" in res.text:
-            return "❌ 打工异常: Cookie失效"
-
-        pattern = r"您需要等待\d+小时\d+分钟\d+秒后即可进行"
-        match = re.search(pattern, res.text)
-        
-        if match:
-            log = f"⏳ 打工冷却中: {match.group()}"
-        else:
-            for i in range(6):
-                session.post(work_url, data={"act": "clickad"}, headers=get_headers(is_ajax=True))
-                time.sleep(random.uniform(3.0, 5.0))
-
-            time.sleep(random.uniform(2.0, 4.0))
-            res_award = session.post(work_url, data={"act": "getcre"}, headers=get_headers(is_ajax=True))
+    headers = get_common_headers("https://www.tsdm39.com/plugin.php?id=np_cliworkdz:work")
+    headers["X-Requested-With"] = "XMLHttpRequest"
+    
+    work_params = {"id": "np_cliworkdz:work"}
+    
+    with httpx.Client(headers=headers, follow_redirects=True, timeout=15) as client:
+        try:
+            response = client.get("https://www.tsdm39.com/plugin.php", params=work_params)
             
-            if "成功" in res_award.text or "获得" in res_award.text:
-                log = "✅ 打工完成"
-            elif "已经" in res_award.text or "冷却" in res_award.text:
-                log = "✅ 打工完成(已领过)"
+            cooldown_match = re.search(r"等待.*?(\d+)小时.*?(\d+)分钟", response.text)
+            if cooldown_match:
+                return f"⏳ 打工冷却中: {cooldown_match.group()}"
+            
+            for i in range(6):
+                client.post(
+                    "https://www.tsdm39.com/plugin.php",
+                    params=work_params,
+                    data={"act": "clickad"}
+                )
+                time.sleep(3)
+
+            response = client.post(
+                "https://www.tsdm39.com/plugin.php",
+                params=work_params,
+                data={"act": "getcre"}
+            )
+            
+            if "您已经成功领取了奖励" in response.text or "打工成功" in response.text:
+                return "✅ 打工完成"
+            elif "必须与上一次间隔" in response.text or "已经打过工" in response.text:
+                return "✅ 今日已打工"
             else:
-                log = "❌ 打工失败: 奖励领取未成功"
-    except Exception as e:
-        log = f"❌ 打工异常: {str(e)}"
-        
-    return log
+                return f"❌ 打工异常: 未知响应 (截取: {response.text[:50]})"
+                
+        except Exception as e:
+            return f"❌ 打工异常: {str(e)}"
 
 def get_score():
-    try:
-        session = requests.Session(impersonate="chrome120", timeout=30.0)
-        res = session.get("https://www.tsdm39.com/home.php?mod=spacecp&ac=credit&showcredit=1", headers=get_headers())
-        soup = BeautifulSoup(res.text, 'html.parser')
-        ul_element = soup.find('ul', class_='creditl')
-        if not ul_element:
-            return "未知"
-            
-        li_element = ul_element.find('li', class_='xi1')
-        if li_element:
-            return li_element.get_text(strip=True).replace("天使币:", "").strip()
-            
-        return "未知"
-    except Exception:
-        return "未知"
+    headers = get_common_headers("https://www.tsdm39.com/home.php?mod=spacecp&ac=credit")
+    with httpx.Client(headers=headers, follow_redirects=True, timeout=15) as client:
+        try:
+            response = client.get(
+                "https://www.tsdm39.com/home.php", 
+                params={"mod": "spacecp", "ac": "credit", "showcredit": "1"}
+            )
+            match = re.search(r'天使币[：:]\s*(\d+)', response.text)
+            if match:
+                return match.group(1)
+            return "未匹配到天使币"
+        except Exception as e:
+            return f"获取失败({str(e)})"
 
 def run_checkin():
-    global has_error
     checkin_log = tsdm_check_in()
     score = get_score()
-    send("签到结果", f"{checkin_log} | 当前天使币: {score}")
-    if "❌" in checkin_log:
-        has_error = True
+    send("签到完成", f"{checkin_log} | 当前天使币: {score}")
 
 def run_work():
-    global has_error
     work_log = tsdm_work()
     score = get_score()
-    send("打工结果", f"{work_log} | 当前天使币: {score}")
-    if "❌" in work_log:
-        has_error = True
+    send("打工完成", f"{work_log} | 当前天使币: {score}")
 
 if __name__ == "__main__":
     if len(sys.argv) > 1:
@@ -135,9 +134,8 @@ if __name__ == "__main__":
             run_checkin()
         elif sys.argv[1] == "work":
             run_work()
+        else:
+            print("Invalid command. Use 'checkin' or 'work'")
     else:
         run_checkin()
         run_work()
-    
-    if has_error:
-        sys.exit(1)
