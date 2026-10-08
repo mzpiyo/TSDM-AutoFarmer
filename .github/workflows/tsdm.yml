@@ -2,24 +2,28 @@ name: TSDM Auto Tasks
 
 on:
   schedule:
-    - cron: '0 */1 * * *'
+    - cron: '30 * * * *'
     - cron: '0 1 * * *'
   workflow_dispatch:
+
+concurrency:
+  group: tsdm-tasks
+  cancel-in-progress: false
 
 jobs:
   tsdm-tasks:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
       - name: Install dependencies
-        run: pip install curl_cffi beautifulsoup4
+        run: pip install -r requirements.txt
 
       - name: Run Scheduled Task
         env:
@@ -30,7 +34,7 @@ jobs:
               echo "TASK_NAME=每日签到" >> $GITHUB_ENV
               echo "SHOULD_NOTIFY=true" >> $GITHUB_ENV
               python tsdm.py checkin
-            elif [[ "${{ github.event.schedule }}" == "0 */1 * * *" ]]; then
+            else
               echo "TASK_NAME=自动打工" >> $GITHUB_ENV
               echo "SHOULD_NOTIFY=false" >> $GITHUB_ENV
               python tsdm.py work
@@ -42,7 +46,6 @@ jobs:
             python tsdm.py work
           fi
 
-      # --- ✅ 成功通知 (整合 Gotify 和 Telegram) ---
       - name: Send Notification on Success
         if: success() && env.SHOULD_NOTIFY == 'true'
         env:
@@ -52,28 +55,21 @@ jobs:
           TG_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           TASK_NAME: ${{ env.TASK_NAME }}
         run: |
-          # 1. Gotify 通知
           if [[ -n "$GOTIFY_URL" && -n "$GOTIFY_TOKEN" ]]; then
-            echo "Sending Gotify notification..."
             curl -s -X POST "$GOTIFY_URL/message?token=$GOTIFY_TOKEN" \
-            -F "title=天使动漫 $TASK_NAME 成功 ✅" \
-            -F "message=任务已完成" \
-            -F "priority=2"
+              -F "title=天使动漫 $TASK_NAME 成功 ✅" \
+              -F "message=任务已完成" \
+              -F "priority=2"
           fi
-
-          # 2. Telegram 通知
           if [[ -n "$TG_BOT_TOKEN" && -n "$TG_CHAT_ID" ]]; then
-            echo "Sending Telegram notification..."
-            MSG="✅ *天使动漫 $TASK_NAME 成功*%0A任务已完成。"
             curl -s -X POST "https://api.telegram.org/bot$TG_BOT_TOKEN/sendMessage" \
-            -d chat_id="$TG_CHAT_ID" \
-            -d text="$MSG" \
-            -d parse_mode="Markdown"
+              -d chat_id="$TG_CHAT_ID" \
+              -d text="✅ *天使动漫 $TASK_NAME 成功*%0A任务已完成。" \
+              -d parse_mode="Markdown"
           fi
 
-      # --- 🚨 失败通知 (整合 Gotify 和 Telegram) ---
       - name: Send Notification on Failure
-        if: failure() && env.SHOULD_NOTIFY == 'true'
+        if: failure()
         env:
           GOTIFY_URL: ${{ secrets.GOTIFY_URL }}
           GOTIFY_TOKEN: ${{ secrets.GOTIFY_TOKEN }}
@@ -81,21 +77,16 @@ jobs:
           TG_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           TASK_NAME: ${{ env.TASK_NAME }}
         run: |
-          # 1. Gotify 通知
+          TASK_NAME=${TASK_NAME:-环境部署}
           if [[ -n "$GOTIFY_URL" && -n "$GOTIFY_TOKEN" ]]; then
-            echo "Sending Gotify notification..."
             curl -s -X POST "$GOTIFY_URL/message?token=$GOTIFY_TOKEN" \
-            -F "title=天使动漫 $TASK_NAME 失败 ❌" \
-            -F "message=脚本执行出错，请检查 GitHub Actions 日志" \
-            -F "priority=8"
+              -F "title=天使动漫 $TASK_NAME 失败 ❌" \
+              -F "message=脚本执行出错，请检查 GitHub Actions 日志" \
+              -F "priority=8"
           fi
-
-          # 2. Telegram 通知
           if [[ -n "$TG_BOT_TOKEN" && -n "$TG_CHAT_ID" ]]; then
-            echo "Sending Telegram notification..."
-            MSG="❌ *天使动漫 $TASK_NAME 失败*%0A脚本执行出错，请检查 GitHub Actions 日志。"
             curl -s -X POST "https://api.telegram.org/bot$TG_BOT_TOKEN/sendMessage" \
-            -d chat_id="$TG_CHAT_ID" \
-            -d text="$MSG" \
-            -d parse_mode="Markdown"
+              -d chat_id="$TG_CHAT_ID" \
+              -d text="❌ *天使动漫 $TASK_NAME 失败*%0A脚本执行出错，请检查 GitHub Actions 日志。" \
+              -d parse_mode="Markdown"
           fi
